@@ -1,0 +1,172 @@
+{
+  "contract_version": "0.1.0",
+  "status": "pending_backend_implementation_not_executed",
+  "purpose": "Backend integration acceptance; descriptions specify required seeded state, not runnable tests yet.",
+  "cases": [
+    {
+      "case_id": "foreign_evidence",
+      "setup": "任务A的令牌，提交任务B证据ID",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 403,
+        "error_code": "FOREIGN_EVIDENCE",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "wrong_year",
+      "setup": "原表2023列被模型标为2024",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 422,
+        "error_code": "INVALID_YEAR",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "null_not_zero",
+      "setup": "Scope 3原文/、候选missing_marker且value=null",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 200,
+        "record_status": "missing_marker",
+        "value": null
+      }
+    },
+    {
+      "case_id": "atomic_batch",
+      "setup": "批内一条有效、一条无效证据",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 403,
+        "error_code": "FOREIGN_EVIDENCE",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "manual_protected",
+      "setup": "模型提交已被用户确认且内容冲突的检查项",
+      "action": "save_check_proposals",
+      "expected": {
+        "http_status": 422,
+        "error_code": "INVALID_STATE",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "absent_search",
+      "setup": "检索为空，模型建议unknown",
+      "action": "save_check_proposals",
+      "expected": {
+        "http_status": 200,
+        "check_status": "unknown",
+        "automatic_zero_score": false
+      }
+    },
+    {
+      "case_id": "unconfirmed_boundary",
+      "setup": "数值与单位相同类型，但边界未确认",
+      "action": "compare_years",
+      "expected": {
+        "http_status": 200,
+        "comparison_status": "needs_review",
+        "percent_change": null
+      }
+    },
+    {
+      "case_id": "zero_baseline",
+      "setup": "同口径两年已确认，基期数值0",
+      "action": "compare_years",
+      "expected": {
+        "http_status": 200,
+        "comparison_status": "undefined",
+        "reason_code": "BASE_ZERO",
+        "percent_change": null
+      }
+    },
+    {
+      "case_id": "revision_conflict",
+      "setup": "请求expected_revision落后于当前任务",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 409,
+        "error_code": "REVISION_CONFLICT",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "lost_response_retry",
+      "setup": "写入已成功但响应丢失，同key同请求重试",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 200,
+        "new_duplicate_records": 0,
+        "response_replayed": true
+      }
+    },
+    {
+      "case_id": "key_reuse",
+      "setup": "相同Idempotency-Key对应不同请求哈希",
+      "action": "save_metric_candidates",
+      "expected": {
+        "http_status": 409,
+        "error_code": "IDEMPOTENCY_CONFLICT",
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "all_unknown",
+      "setup": "20项均unknown且均适用",
+      "action": "calculate_score",
+      "expected": {
+        "http_status": 200,
+        "coverage": "0",
+        "reference_score": null,
+        "final_score": null,
+        "lower_bound": "0",
+        "upper_bound": "100"
+      }
+    },
+    {
+      "case_id": "all_na",
+      "setup": "20项均由用户确认N/A，记录理由",
+      "action": "calculate_score",
+      "expected": {
+        "http_status": 200,
+        "label": "no_applicable_items",
+        "coverage": null,
+        "final_score": null
+      }
+    },
+    {
+      "case_id": "export_race",
+      "setup": "导出开始后用户修改任务revision",
+      "action": "export_analysis",
+      "expected": {
+        "http_status": 409,
+        "error_code": "REVISION_CONFLICT",
+        "published_artifacts": 0
+      }
+    },
+    {
+      "case_id": "review_invalidation",
+      "setup": "用户修改指标后读取任务结果",
+      "action": "get_task_results",
+      "expected": {
+        "http_status": 200,
+        "stale_comparisons_marked": true,
+        "stale_checks_marked": true,
+        "score": null
+      }
+    },
+    {
+      "case_id": "id_not_authorization",
+      "setup": "任务A令牌下载任务B artifact",
+      "action": "artifact_download",
+      "expected": {
+        "http_status": 403,
+        "data_leaked": false
+      }
+    }
+  ]
+}
