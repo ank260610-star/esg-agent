@@ -115,7 +115,7 @@ P2：全ESG、多企业排名、训练评分模型、全市场抓取、实时新
 - `Task`：task_id、company_id、report_ids、selected_years、rule_version、stage、revision、created_at、updated_at、error可空。任务绑定报告集合不可被模型扩充。
 - `MetricRecord`：record_id、task_id、report_id、metric_id、metric_year、raw_value、value可空Decimal、raw_unit、canonical_unit可空、conversion_rule可空、denominator可空、boundary_text、boundary_key可空、method_text、scope3_categories[]、evidence_ids[]、status、origin(reported/derived/manual)、supersedes_id可空、revision。
 - `status`枚举：`extracted / missing_marker / unknown / conflict / parse_error`；人工是否确认另用`review_state=unreviewed/confirmed/rejected`，不与缺失类型混成一个枚举。
-- `MetricCandidate`与MetricRecord字段相同但不含服务端ID/revision；仅允许引用已有Evidence。
+- `MetricCandidate`的精确字段以contracts/schema.json为准，不含record_id/task_id/revision/review_state/is_current；origin仅reported/derived。derived须有derivation，unknown/conflict/parse_error须有extraction_note；仅允许引用已有Evidence。
 - `ComparisonRequest`：task_id、older_record_id、newer_record_id；`ComparisonResult`：status(comparable/needs_review/not_comparable/undefined)、reason_codes[]、delta可空、percent_change可空、unit、evidence_ids[]、revision。禁止用字符串理由代替可测的状态。
 - `CheckResult`：task_id、check_id、rule_version、status(met/partial/not_met/unknown/not_applicable)、evidence_ids[]、reason、missing_information、suggestion、origin(model/manual)、review_state、revision。
 - `ScoreResult`：revision、rule_version、coverage、reference_score可空、final_score可空、lower_bound可空、upper_bound可空、dimension_results、applicable_weight、known_weight、label。
@@ -130,6 +130,8 @@ P2：全ESG、多企业排名、训练评分模型、全市场抓取、实时新
 
 ## 3. 服务与工具接口
 
+2026-11-19接口细化：已新增[contracts/TOOL_SPEC.md](../../../contracts/TOOL_SPEC.md)、Schema和逐工具示例，工具字段与传输约定以contracts/v0.1.0为准。四个写入工具增加expected_revision，统一对象请求体；新增GET rulebook接口；模型不得提交人工状态。详见该规范的版本与幂等约定。
+
 ### 3.1 HTTP契约
 
 | 方法/路径 | 输入 | 输出/行为 |
@@ -138,12 +140,13 @@ P2：全ESG、多企业排名、训练评分模型、全市场抓取、实时新
 | GET /api/reports/{id}/pdf | 登记ID | application/pdf，供本地查看；不暴露任意路径 |
 | POST /api/tasks | company_id、report_ids、selected_years | Task；确认同一企业和1—2份报告 |
 | GET /api/tasks/{id} | task_id | 当前阶段、revision、问题 |
-| POST /api/tasks/{id}/parse | 无任意文件参数 | 解析状态和问题页 |
+| POST /api/tasks/{id}/parse | expected_revision，无任意文件参数 | 解析状态和问题页 |
 | POST /api/tasks/{id}/search | query、metric_id可空、limit≤20 | Evidence[] |
-| POST /api/tasks/{id}/metrics | MetricCandidate[] | 校验后记录；无效引用整批拒绝，不部分静默成功 |
+| POST /api/tasks/{id}/metrics | {expected_revision, candidates: MetricCandidate[]} | 校验后记录；无效引用整批拒绝，不部分静默成功 |
 | POST /api/tasks/{id}/validate | record_ids | 字段/冲突/边界问题 |
-| POST /api/tasks/{id}/compare | ComparisonRequest除task_id | ComparisonResult |
-| POST /api/tasks/{id}/checks | CheckResult候选，不含服务端字段 | 规则、证据、状态校验后的建议 |
+| POST /api/tasks/{id}/compare | {expected_revision, older_record_id, newer_record_id} | ComparisonResult |
+| POST /api/tasks/{id}/checks | {expected_revision, checks: CheckProposal[]} | 规则、证据、状态校验后的建议 |
+| GET /api/tasks/{id}/rulebook | 当前任务规则版本 | Rulebook，含20项检查及锚点 |
 | GET /api/tasks/{id}/score | 当前固定规则和已存状态 | ScoreResult，不接受外部权重 |
 | POST /api/tasks/{id}/reviews | ReviewCommand | 新revision，旧衍生结果失效 |
 | POST /api/tasks/{id}/exports | expected_revision | 同版本MD/CSV/JSON的artifact_id与下载URL |
@@ -159,13 +162,13 @@ P2：全ESG、多企业排名、训练评分模型、全市场抓取、实时新
 
 按以下业务名称注册插件工具（不是Harness内置工具）：
 
-1. `parse_report(task_id)`：解析已绑定报告。
+1. `parse_report(task_id, expected_revision)`：解析已绑定报告。
 2. `search_evidence(task_id, query, metric_id?, limit?)`：返回证据、页码和受控查看链接。
 3. `get_rulebook(task_id)`：从服务端取得当前20项规则和锚点，模型不能改写。
-4. `save_metric_candidates(task_id, candidates)`：模型组织抽取结果，服务端校验和存储。
+4. `save_metric_candidates(task_id, expected_revision, candidates)`：模型组织抽取结果，服务端校验和存储。
 5. `validate_metrics(task_id, record_ids)`。
-6. `compare_years(task_id, older_record_id, newer_record_id)`。
-7. `save_check_proposals(task_id, checks)`。
+6. `compare_years(task_id, expected_revision, older_record_id, newer_record_id)`。
+7. `save_check_proposals(task_id, expected_revision, checks)`。
 8. `calculate_score(task_id)`。
 9. `get_task_results(task_id)`。
 10. `export_analysis(task_id, expected_revision)`。

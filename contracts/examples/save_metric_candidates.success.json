@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "data": {
+    "records": [
+      {
+        "report_id": "mock_report_001",
+        "metric_id": "E04",
+        "metric_year": 2024,
+        "raw_value": "100.00",
+        "value": "100.00",
+        "raw_unit": "MWh",
+        "canonical_unit": "MWh",
+        "conversion_rule": null,
+        "denominator": null,
+        "boundary_text": "模拟公司运营场所；统计范围待人工复核",
+        "boundary_key": null,
+        "method_text": "模拟数据，不代表已核实方法",
+        "scope3_categories": [],
+        "evidence_ids": [
+          "mock_evidence_001"
+        ],
+        "status": "extracted",
+        "origin": "reported",
+        "supersedes_id": null,
+        "derivation": null,
+        "record_id": "mock_metric_2024",
+        "task_id": "mock_task_001",
+        "review_state": "unreviewed",
+        "revision": 7,
+        "is_current": true,
+        "extraction_note": ""
+      }
+    ],
+    "issues": []
+  },
+  "error": null,
+  "task_id": "mock_task_001",
+  "revision": 7
+}
