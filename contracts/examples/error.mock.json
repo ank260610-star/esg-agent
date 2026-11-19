@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "FOREIGN_EVIDENCE",
+    "message": "引用的证据不属于当前任务。",
+    "retryable": false
+  },
+  "task_id": "mock_task_001",
+  "revision": 1
+}
