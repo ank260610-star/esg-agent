@@ -6,7 +6,7 @@
 
 ## 从这里开始
 
-1. 阅读[需求文档](项目需求文档.md)与[实现交接文档](docs/superpowers/plans/2026-11-19-esg-agent-implementation.md)。
+1. 阅读[需求文档](项目需求文档.md)与[实现交接文档 v0.3](docs/superpowers/plans/2026-11-19-esg-agent-implementation.md)。
 2. 阅读[协作约定](docs/COLLABORATION.md)及[接口约定](contracts/README.md)，认领任务并创建功能分支。
 3. 智能体成员从[harness-plugin](harness-plugin/README.md)开始；后端成员从[backend](backend/README.md)开始；资料成员从[测试说明](tests/README.md)开始。
 
@@ -25,16 +25,18 @@
 
 ```mermaid
 flowchart TD
-    U[用户登记报告与任务] --> H[Harness 主智能体：任务编排与解释]
+    U[用户] --> W[FastAPI/Jinja2 业务界面]
+    W --> S[Python SDK 宿主]
+    S --> H[Harness 主智能体：任务编排与解释]
     H --> P[ESG 工具插件：固定接口适配]
     P --> B[Python 后端：解析、检索与指标提取]
     B --> V[确定性校验、比较与评分]
     V --> H
-    U --> R[用户页面：证据查看与人工复核]
+    W --> R[证据查看与人工复核]
     R --> B
 ```
 
-后端维护指标提取模型/规则、提示词和结果入库；智能体调用extract_metrics取得带证据记录，不再自行生成和提交指标候选。披露检查建议仍由主智能体依据规则提出，分数由后端确定性计算。契约版本0.2.0，评分规则版本独立为disclosure-v0.1。
+业务页面通过Python SDK驱动Harness，开发Web UI仅作调试。后端维护指标提取模型/规则、提示词和结果入库；智能体调用extract_metrics取得带证据记录，不再自行生成和提交指标候选。披露检查建议仍由主智能体依据规则提出，分数由后端确定性计算。契约版本0.2.0，评分规则版本独立为disclosure-v0.1。
 
 后端代码统一放在backend/src/esg_app/；根目录保留tests、rules和contracts。Codex固定在codex分支开发并提交PR，其他成员按小组约定使用各自分支。
 

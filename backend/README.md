@@ -2,7 +2,7 @@
 
 负责PDF登记解析、证据检索、六项指标提取、结构化校验、跨年计算、自建评分、复核和导出。当前只有设计与提示词，尚无可运行代码。
 
-Python代码统一位于backend/src/esg_app/，依赖配置在根目录pyproject.toml；根目录tests、rules和contracts不变。
+Python代码统一位于backend/src/esg_app/，依赖配置在根目录pyproject.toml；根目录tests、rules和contracts不变。业务页采用FastAPI/Jinja2；其中harness_runner.py是智能体成员维护的SDK宿主适配，不承担指标提取逻辑。SDK必须在后台执行，不能阻塞接收工具回调的HTTP服务。
 
 ## 对智能体交付什么
 
