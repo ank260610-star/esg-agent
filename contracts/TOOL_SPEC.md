@@ -1,6 +1,6 @@
 # 工具与HTTP约定
 
-契约版本：0.1.0；评分规则版本：disclosure-v0.1。两者独立，不得把API版本当评分版本。
+契约版本：0.2.0；评分规则版本：disclosure-v0.1。两者独立，不得把API版本当评分版本。
 
 ## 1. 共通字段与身份
 
@@ -24,7 +24,7 @@
 | parse_report | POST /api/tasks/{task_id}/parse | expected_revision | ParseSummary |
 | search_evidence | POST /api/tasks/{task_id}/search | query, metric_id?, limit? | SearchResult |
 | get_rulebook | GET /api/tasks/{task_id}/rulebook | 无 | Rulebook |
-| save_metric_candidates | POST /api/tasks/{task_id}/metrics | expected_revision, candidates | MetricsSaved |
+| extract_metrics | POST /api/tasks/{task_id}/extract | expected_revision, metric_ids, years | ExtractionResult |
 | validate_metrics | POST /api/tasks/{task_id}/validate | record_ids | ValidationSummary |
 | compare_years | POST /api/tasks/{task_id}/compare | expected_revision, older_record_id, newer_record_id | ComparisonResult |
 | save_check_proposals | POST /api/tasks/{task_id}/checks | expected_revision, checks | ChecksSaved |
@@ -39,7 +39,7 @@
 ## 3. 版本、原子性与重试
 
 - task.revision为服务端非负整数。写入型四工具必须带expected_revision，服务端在同一事务中核对；不匹配409 REVISION_CONFLICT，零写入。模型读取最新状态后重新决定操作，禁止客户端改版本后自动重放旧语义。
-- 原子保存candidates/checks整批：任何记录格式、归属、规则版本或证据不合法则整批拒绝。成功后的revision由服务端返回，调用方不得假定每次必然+1。
+- 提取记录和检查建议均原子保存。后端提取器的数值/年份类无效候选经有界修正后仍失败时转成unknown/parse_error并写issues；出现外任务证据等权限问题则立即返回FOREIGN_EVIDENCE且整批拒绝，不把原始无效数值入库；保存检查建议发现非法证据/规则版本则整批拒绝。成功后的revision由服务端返回，不假定必然+1。
 - parse_report在相同文件哈希/解析器版本命中有效缓存时可无变化；否则保存一次新状态，重复登记不可重复创建证据。局部失败写入ParseSummary.partial与问题页；完全无文字层返回NO_TEXT_LAYER，不伪装未披露。
 - compare_years持久化比较结果，属于写入；不改变原始MetricRecord。相同输入结果复用，不凭重复调用制造新版本。
 - validate_metrics只读诊断；calculate_score确定性读取当前有效记录；二者不修改revision。派生缓存不能作为新的业务写入。
@@ -48,7 +48,7 @@
 - 幂等key覆盖网络重试与响应丢失，原始响应包含原始revision，收到重放响应后可再读取当前任务。幂等记录与成功写入同事务；失败请求不消耗key。
 - 仅TIMEOUT/MODEL_UNAVAILABLE/INTERNAL_ERROR等明确retryable=true的瞬态错误最多重试2次，写入重试必须保留同key/请求/版本。业务4xx不自动重试。
 - 传输超时、断连或取消只说明客户端未得到结果，**不保证写入已回滚**。恢复后用同幂等key查询/重放，随后读取任务；不能盲目重建请求。
-- 建议HTTP默认超时：解析120秒，其他30秒；取消向下传递。无效JSON/HTML网关响应由适配器转为INTERNAL_ERROR，脱敏说明，不能当成功数据。
+- 建议HTTP默认超时：解析和指标提取120秒，其他30秒；取消向下传递。无效JSON/HTML网关响应由适配器转为INTERNAL_ERROR，脱敏说明，不能当成功数据。
 
 ## 4. 各工具行为
 
@@ -64,17 +64,25 @@ query最多2000字符；metric_id可选E01—E06。返回`{evidence:[...],issues
 
 返回当前规则版本、20项检查、锚点、权重、适用性及引用状态；每项有check_id/dimension/weight/subconditions/met_anchor/partial_anchor/not_met_anchor/unknown_anchor/applicability/source_refs。单子条件partial_anchor=null。权重为占总分比例，20项合计1。来源未核实必须unverified；不得编造条款。包含target_key与target_selection_status，四项T检查须同一目标。
 
-### save_metric_candidates
+### extract_metrics
 
-输入1—100条MetricCandidate；返回records及issues。每条候选的完整字段在Schema中定义：report_id、metric_id、metric_year、raw_value/value、raw_unit/canonical_unit、conversion_rule、denominator、boundary_text/boundary_key、method_text、scope3_categories、evidence_ids、status、origin、supersedes_id、derivation、extraction_note。
+输入task_id、expected_revision、metric_ids（E01—E06中1—6个唯一值）、years（1—10个唯一年度）。years必须是task.selected_years的子集；报告集来自服务端任务绑定，不接收report_ids、任意候选/数值、模型名、提示词或文件路径。主智能体只选择要提取的指标和年份。
 
-- origin仅reported/derived，服务端生成record_id、task_id、review_state=unreviewed和revision，不接受模型提交人工状态。
-- extracted必须有标准数值、原单位和支持证据；missing_marker必须保留原标记、value=null且有证据；unknown/parse_error的value=null，可无证据；unknown/conflict/parse_error必须用extraction_note填写具体原因，并同步当前任务问题清单。conflict保留有来源候选，不静默择优。
-- denominator对象含kind/currency/scale/unit，例：营收、CNY、10000、元；必须与强度canonical_unit一致。无强度分母时null。
-- derived必须附derivation的白名单formula_id、已登记input_record_ids与conversion_rule；数值由后端重新计算核对。普通reported的derivation=null。
-- boundary_key只可引用服务端已有核对范围；不能凭模型自造key确认一致性。supersedes_id只能指当前任务中已核实重述关系。
-- 后端必须验证数值与原文行/年列、单位、所有证据所属任务及推导输入；JSON Schema无法证明这些。冲突有合法证据时保存并返回issues，不伪造confirmed。
-- 同一候选的业务指纹相同则复用，不因不同幂等key反复创建；不同来源/边界候选并存。
+后端负责检索→提取模型或规则抽取→内部候选校验→原子保存。可参考Tracker适配中文报告，但不假定其已集成。后端自身模型配置、提取提示词和版本由业务端维护，不能从主Agent接收可覆盖系统指令的参数。
+
+返回ExtractionResult：status(completed/partial)、records、issues、run。run含run_id、owner固定backend、extractor_version、model_id/prompt_version（纯规则未调用模型时可null）、metric_ids、years、record_ids（本次返回的记录ID）、usage(model_calls、input_tokens/output_tokens可空)。这些运行元数据需持久化，get_task_results通过extraction_runs返回；未知用量不能当0，后端提取调用计入任务统一用量/额度，不能因移出Harness而绕过上限。
+
+每个请求的指标—年份组合至少有一条记录：有原文缺失符号则missing_marker；未检索到或无法校验则unknown/parse_error，带extraction_note和issues；多来源/口径冲突保留合法候选并标conflict。completed表示全部组合完成提取或明确读到缺失标记，不代表人工确认/可跨年比较；任何组合仍unknown/conflict/parse_error则partial。全无文字层、模型不可用或额度不足等执行失败用ok=false和具体错误码，不能伪装成“未披露”。
+
+MetricCandidate仅为后端内部结构，保留在Schema中供提取适配器校验，不注册save_metric_candidates工具，不开放Agent的POST /metrics写入入口。内部约束：
+
+- origin仅reported/derived，后端注入record_id/task_id/revision/review_state。不得把提取模型当人工复核者。
+- extracted有可校验数值、原单位和支持证据；缺失不当0；unknown/conflict/parse_error须有extraction_note。
+- denominator含kind/currency/scale/unit，必须与强度单位一致；derived附白名单derivation并由程序重算。
+- 证据、重述关系及boundary_key必须属于当前任务且有依据；不同来源/边界的记录不能静默合并。
+- 命中同文件/解析器/提取器/模型/提示词版本及相同指标年度的有效缓存时复用，业务指纹去重。已有人工确认/修改的记录优先保留，不能由重提取覆盖；若存在实质冲突，返回issues并引导复核。
+- 调用开始及提交前都核对expected_revision；模型运行期间若用户修改结果则409 REVISION_CONFLICT，候选零写入，保留已有人工记录。模型调用用量仍如实记账，失败不能报0消耗。
+- 相同幂等key的并发或重试不能重复调用提取模型。后端需复用同一执行，或返回INVALID_STATE提示正在处理，不能第二次生成并写入。网络取消不能被解释为确定回滚。
 
 ### validate_metrics
 
@@ -147,4 +155,4 @@ examples中每个工具各有request/success/error。**各三件套是独立场�
 
 schema.json是领域数据契约，不是后端实现、完整OpenAPI或Harness现成插件。自动测试只验证结构与少量样例算术。证据真实性、任务归属、数据库事务、幂等持久化、规则锚点和计算正确性须在后端实现后按backend-acceptance-cases.json补测。
 
-新接口的接入顺序：search_evidence → save_metric_candidates → validate_metrics → get_task_results，然后接比较、规则和评分。真实运行验证与模拟契约验证必须分别记录。
+新接口的接入顺序：extract_metrics → validate_metrics → get_task_results，再用search_evidence核对原文，然后接比较、规则和评分。真实运行验证与模拟契约验证必须分别记录。

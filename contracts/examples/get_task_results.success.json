@@ -97,7 +97,30 @@
     "comparisons": [],
     "score": null,
     "issues": [],
-    "review_url": "/tasks/mock_task_001/review"
+    "review_url": "/tasks/mock_task_001/review",
+    "extraction_runs": [
+      {
+        "run_id": "mock_extract_run_001",
+        "owner": "backend",
+        "extractor_version": "mock-extractor-0",
+        "model_id": "mock-model",
+        "prompt_version": "mock-extraction-prompt-0",
+        "metric_ids": [
+          "E04"
+        ],
+        "years": [
+          2024
+        ],
+        "usage": {
+          "model_calls": 1,
+          "input_tokens": 100,
+          "output_tokens": 50
+        },
+        "record_ids": [
+          "mock_metric_2024"
+        ]
+      }
+    ]
   },
   "error": null,
   "task_id": "mock_task_001",

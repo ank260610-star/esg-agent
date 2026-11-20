@@ -14,12 +14,29 @@
 
 | 目录 | 用途 |
 |---|---|
-| backend/ | Python业务服务：解析、证据、校验、计算、评分 |
-| harness-plugin/ | Harness工具适配、系统提示词和流程 |
+| backend/ | Python业务服务：解析、证据检索、模型/规则指标提取、校验、计算、评分 |
+| harness-plugin/ | Harness工具适配、任务编排、证据追问与结果解释 |
 | contracts/ | 共享接口及明确标记的模拟JSON |
 | rules/ | 六指标词典、自建评分配置 |
 | tests/ | 测试和人工参考样本 |
 | docs/ | 需求、实施方案、协作及验证记录 |
+
+## 统一架构与分工
+
+```mermaid
+flowchart TD
+    U[用户登记报告与任务] --> H[Harness 主智能体：任务编排与解释]
+    H --> P[ESG 工具插件：固定接口适配]
+    P --> B[Python 后端：解析、检索与指标提取]
+    B --> V[确定性校验、比较与评分]
+    V --> H
+    U --> R[用户页面：证据查看与人工复核]
+    R --> B
+```
+
+后端维护指标提取模型/规则、提示词和结果入库；智能体调用extract_metrics取得带证据记录，不再自行生成和提交指标候选。披露检查建议仍由主智能体依据规则提出，分数由后端确定性计算。契约版本0.2.0，评分规则版本独立为disclosure-v0.1。
+
+后端代码统一放在backend/src/esg_app/；根目录保留tests、rules和contracts。Codex固定在codex分支开发并提交PR，其他成员按小组约定使用各自分支。
 
 ## 本地启动
 

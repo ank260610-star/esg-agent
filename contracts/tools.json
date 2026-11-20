@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "schema_dialect": "https://json-schema.org/draft/2020-12/schema",
   "status": "contract_only_not_implemented",
   "tools": [
@@ -34,11 +34,11 @@
       "success_http_status": 200
     },
     {
-      "name": "save_metric_candidates",
+      "name": "extract_metrics",
       "method": "POST",
-      "path": "/api/tasks/{task_id}/metrics",
-      "input_schema": "schema.json#/$defs/save_metric_candidates_input",
-      "output_schema": "schema.json#/$defs/save_metric_candidates_output",
+      "path": "/api/tasks/{task_id}/extract",
+      "input_schema": "schema.json#/$defs/extract_metrics_input",
+      "output_schema": "schema.json#/$defs/extract_metrics_output",
       "mutates_revision": true,
       "requires_idempotency_key": true,
       "success_http_status": 200
