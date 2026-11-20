@@ -1,12 +1,12 @@
 {
-  "contract_version": "0.1.0",
+  "contract_version": "0.2.0",
   "status": "pending_backend_implementation_not_executed",
   "purpose": "Backend integration acceptance; descriptions specify required seeded state, not runnable tests yet.",
   "cases": [
     {
       "case_id": "foreign_evidence",
-      "setup": "任务A的令牌，提交任务B证据ID",
-      "action": "save_metric_candidates",
+      "setup": "后端提取器测试替身产生候选：任务A的令牌，提交任务B证据ID",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 403,
         "error_code": "FOREIGN_EVIDENCE",
@@ -15,18 +15,20 @@
     },
     {
       "case_id": "wrong_year",
-      "setup": "原表2023列被模型标为2024",
-      "action": "save_metric_candidates",
+      "setup": "后端提取器测试替身产生候选：原表2023列被模型标为2024",
+      "action": "extract_metrics",
       "expected": {
-        "http_status": 422,
-        "error_code": "INVALID_YEAR",
-        "writes": 0
+        "http_status": 200,
+        "extraction_status": "partial",
+        "issue_code": "INVALID_YEAR",
+        "record_status": "unknown",
+        "invalid_values_written": 0
       }
     },
     {
       "case_id": "null_not_zero",
-      "setup": "Scope 3原文/、候选missing_marker且value=null",
-      "action": "save_metric_candidates",
+      "setup": "后端提取器测试替身产生候选：Scope 3原文/、候选missing_marker且value=null",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 200,
         "record_status": "missing_marker",
@@ -35,8 +37,8 @@
     },
     {
       "case_id": "atomic_batch",
-      "setup": "批内一条有效、一条无效证据",
-      "action": "save_metric_candidates",
+      "setup": "后端提取器测试替身产生候选：批内一条有效、一条无效证据",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 403,
         "error_code": "FOREIGN_EVIDENCE",
@@ -87,7 +89,7 @@
     {
       "case_id": "revision_conflict",
       "setup": "请求expected_revision落后于当前任务",
-      "action": "save_metric_candidates",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 409,
         "error_code": "REVISION_CONFLICT",
@@ -97,7 +99,7 @@
     {
       "case_id": "lost_response_retry",
       "setup": "写入已成功但响应丢失，同key同请求重试",
-      "action": "save_metric_candidates",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 200,
         "new_duplicate_records": 0,
@@ -107,7 +109,7 @@
     {
       "case_id": "key_reuse",
       "setup": "相同Idempotency-Key对应不同请求哈希",
-      "action": "save_metric_candidates",
+      "action": "extract_metrics",
       "expected": {
         "http_status": 409,
         "error_code": "IDEMPOTENCY_CONFLICT",
@@ -166,6 +168,38 @@
       "expected": {
         "http_status": 403,
         "data_leaked": false
+      }
+    },
+    {
+      "case_id": "extraction_scope",
+      "setup": "请求years不在task.selected_years内",
+      "action": "extract_metrics",
+      "expected": {
+        "http_status": 422,
+        "error_code": "INVALID_YEAR",
+        "model_calls": 0,
+        "writes": 0
+      }
+    },
+    {
+      "case_id": "extraction_commit_race",
+      "setup": "提取模型运行期间用户完成一次复核，revision递增",
+      "action": "extract_metrics",
+      "expected": {
+        "http_status": 409,
+        "error_code": "REVISION_CONFLICT",
+        "writes": 0,
+        "manual_records_preserved": true
+      }
+    },
+    {
+      "case_id": "protected_extraction_cache",
+      "setup": "指标已人工确认，重复请求同企业/年/指标",
+      "action": "extract_metrics",
+      "expected": {
+        "http_status": 200,
+        "manual_records_preserved": true,
+        "unnecessary_model_calls": 0
       }
     }
   ]

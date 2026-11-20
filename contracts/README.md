@@ -1,4 +1,4 @@
-# ESG工具接口契约 v0.1.0
+# ESG工具接口契约 v0.2.0
 
 状态：**已定义并通过契约校验，业务后端和Harness工具尚未实现。** 示例全部是虚构模拟数据，不代表真实企业、已提取结果或真实API响应。
 
@@ -38,12 +38,12 @@ Python最低3.11。Windows可使用`.venv/Scripts/python`。这是契约校验�
 
 本目录细化原[实现方案](../docs/superpowers/plans/2026-11-19-esg-agent-implementation.md)。冲突时，本目录对**工具与传输字段**的定义优先：
 
-- 写入型parse_report/save_metric_candidates/compare_years/save_check_proposals增加必填expected_revision；export_analysis原有该字段保留。
-- 指标/检查提交统一使用`{expected_revision,candidates}`或`{expected_revision,checks}`请求体，而不是裸数组；task_id来自URL。
+- 写入型parse_report/extract_metrics/compare_years/save_check_proposals增加必填expected_revision；export_analysis原有该字段保留。
+- extract_metrics接收`{expected_revision,metric_ids,years}`，指标候选由后端生成、校验并保存；主智能体不再提交候选。检查建议使用`{expected_revision,checks}`，task_id来自URL。
 - 新增只读`GET /api/tasks/{task_id}/rulebook`，供get_rulebook使用。
 - 输出data统一为有明确名称字段的对象；search返回`{evidence,issues}`，不再直接返回数组。
-- MetricCandidate不允许origin=manual、review_state、record_id、task_id、revision；后端注入这些字段。derived必须有可追踪derivation。
+- MetricCandidate只用于后端内部提取器边界，不是Agent输入；后端验证后注入服务端ID/revision/review_state。提取结果包含后端run版本、模型/提示词版本及用量。
 - 自动CheckProposal只允许met/partial/not_met/unknown；已有人工N/A可在结果中读取，但不能由模型再次提交。
 - coverage/weight使用0—1十进制字符串；score使用0—100；percent_change使用百分数值，例如25%传`"25"`。
 
-接口变更应同时修改规范、Schema、manifest、示例、提示词和测试，由另一端成员复核后合并；不静默另起一套字段。进入真实开发后，破坏性变更提升契约版本。
+接口变更应同时修改规范、Schema、manifest、示例、提示词和测试，由另一端成员复核后合并；不静默另起一套字段。本次为破坏性职责调整，契约升为0.2.0；评分规则仍为disclosure-v0.1。旧save_metric_candidates工具及其请求/输出示例已移除，不作为Agent兼容入口。

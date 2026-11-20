@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / 'contracts'
 TOOLS = {'parse_report', 'search_evidence', 'get_rulebook',
-         'save_metric_candidates', 'validate_metrics', 'compare_years',
+         'extract_metrics', 'validate_metrics', 'compare_years',
          'save_check_proposals', 'calculate_score', 'get_task_results', 'export_analysis'}
 
 
@@ -29,6 +29,22 @@ class ContractsTest(unittest.TestCase):
             {'$schema': self.schema['$schema'], '$defs': self.common,
              '$ref': f'#/$defs/{tool}_{kind}'}, format_checker=FormatChecker())
 
+    def candidate(self):
+        record = self.example('extract_metrics', 'success')['data']['records'][0]
+        return {key: value for key, value in record.items()
+                if key in self.common['MetricCandidate']['properties']}
+
+    def validate_candidate(self, value):
+        validator = Draft202012Validator(
+            {'$schema': self.schema['$schema'], '$defs': self.common,
+             '$ref': '#/$defs/MetricCandidate'}, format_checker=FormatChecker())
+        validator.validate(value)
+
+    def assert_candidate_invalid(self, value):
+        from jsonschema import ValidationError
+        with self.assertRaises(ValidationError):
+            self.validate_candidate(value)
+
     def example(self, tool, kind):
         return read(CONTRACTS / 'examples' / f'{tool}.{kind}.json')
 
@@ -39,6 +55,8 @@ class ContractsTest(unittest.TestCase):
         Draft202012Validator.check_schema(self.schema)
         self.assertEqual({t['name'] for t in self.manifest['tools']}, TOOLS)
         self.assertEqual(len(self.manifest['tools']), 10)
+        self.assertEqual(self.manifest['contract_version'], '0.2.0')
+        self.assertTrue(self.schema['$id'].endswith(':0.2.0'))
         for tool in TOOLS:
             for kind in ('request', 'success', 'error'):
                 with self.subTest(tool=tool, kind=kind):
@@ -54,34 +72,44 @@ class ContractsTest(unittest.TestCase):
         self.assert_invalid('search_evidence', 'output', value)
 
     def test_decimal_must_be_string_and_missing_must_be_null(self):
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'][0]['value'] = 100
-        self.assert_invalid('save_metric_candidates', 'input', value)
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'][0].update(status='missing_marker', raw_value='/', value='0')
-        self.assert_invalid('save_metric_candidates', 'input', value)
-        value['candidates'][0]['value'] = None
-        self.validator('save_metric_candidates', 'input').validate(value)
+        value = self.candidate()
+        value['value'] = 100
+        self.assert_candidate_invalid(value)
+        value = self.candidate()
+        value.update(status='missing_marker', raw_value='/', value='0')
+        self.assert_candidate_invalid(value)
+        value['value'] = None
+        self.validate_candidate(value)
 
-    def test_model_cannot_claim_manual_confirmation(self):
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'][0]['review_state'] = 'confirmed'
-        self.assert_invalid('save_metric_candidates', 'input', value)
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'][0]['origin'] = 'manual'
-        self.assert_invalid('save_metric_candidates', 'input', value)
+    def test_model_cannot_submit_candidates_or_manual_confirmation(self):
+        self.assertNotIn('save_metric_candidates_input', self.common)
+        self.assertNotIn('save_metric_candidates', {t['name'] for t in self.manifest['tools']})
+        for field, content in [('candidates', [self.candidate()]),
+                               ('review_state', 'confirmed'), ('model_id', 'arbitrary-model'),
+                               ('record_ids', ['foreign_record'])]:
+            value = self.example('extract_metrics', 'request')
+            value[field] = content
+            self.assert_invalid('extract_metrics', 'input', value)
+        value = self.candidate()
+        value['origin'] = 'manual'
+        self.assert_candidate_invalid(value)
         value = self.example('save_check_proposals', 'request')
         value['checks'][0]['status'] = 'not_applicable'
         self.assert_invalid('save_check_proposals', 'input', value)
 
-    def test_mutation_requires_revision_and_batch_is_bounded(self):
-        for tool in ('parse_report', 'save_metric_candidates', 'save_check_proposals', 'compare_years'):
+    def test_mutation_requires_revision_and_extraction_scope_is_bounded(self):
+        for tool in ('parse_report', 'extract_metrics', 'save_check_proposals', 'compare_years'):
             value = self.example(tool, 'request')
             value.pop('expected_revision')
             self.assert_invalid(tool, 'input', value)
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'] *= 101
-        self.assert_invalid('save_metric_candidates', 'input', value)
+        value = self.example('extract_metrics', 'request')
+        value['metric_ids'] = ['E04', 'E04']
+        self.assert_invalid('extract_metrics', 'input', value)
+        value['metric_ids'] = ['E99']
+        self.assert_invalid('extract_metrics', 'input', value)
+        value = self.example('extract_metrics', 'request')
+        value['years'] = []
+        self.assert_invalid('extract_metrics', 'input', value)
 
     def test_error_and_success_envelopes_cannot_mix(self):
         value = self.example('search_evidence', 'error')
@@ -127,12 +155,49 @@ class ContractsTest(unittest.TestCase):
         self.assert_invalid('get_task_results', 'output', value)
 
     def test_unknown_has_no_value_and_explains_why(self):
-        value = self.example('save_metric_candidates', 'request')
-        value['candidates'][0].update(status='unknown', value=None, raw_value=None,
-                                       evidence_ids=[], extraction_note='解析不足，未定位到指标。')
-        self.validator('save_metric_candidates', 'input').validate(value)
-        value['candidates'][0]['extraction_note'] = ''
-        self.assert_invalid('save_metric_candidates', 'input', value)
+        value = self.candidate()
+        value.update(status='unknown', value=None, raw_value=None,
+                     evidence_ids=[], extraction_note='解析不足，未定位到指标。')
+        self.validate_candidate(value)
+        value['extraction_note'] = ''
+        self.assert_candidate_invalid(value)
+
+    def test_extraction_carries_backend_run_and_usage(self):
+        result = self.example('extract_metrics', 'success')['data']
+        self.assertEqual(result['run']['owner'], 'backend')
+        self.assertEqual(result['run']['metric_ids'], ['E04'])
+        self.assertEqual(result['run']['years'], [2024])
+        self.assertEqual(result['records'][0]['metric_year'], 2024)
+        self.assertEqual(result['run']['record_ids'],
+                         [record['record_id'] for record in result['records']])
+        value = self.example('extract_metrics', 'success')
+        value['data']['run']['owner'] = 'harness'
+        self.assert_invalid('extract_metrics', 'output', value)
+
+    def test_completed_extraction_cannot_hide_unknown_records(self):
+        value = self.example('extract_metrics', 'success')
+        record = value['data']['records'][0]
+        record.update(status='unknown', value=None, raw_value=None, evidence_ids=[],
+                      extraction_note='未定位到原文。')
+        self.assert_invalid('extract_metrics', 'output', value)
+        value['data']['status'] = 'partial'
+        self.validator('extract_metrics', 'output').validate(value)
+
+    def test_public_tool_and_architecture_are_aligned(self):
+        extraction = next(t for t in self.manifest['tools'] if t['name'] == 'extract_metrics')
+        self.assertEqual(extraction['path'], '/api/tasks/{task_id}/extract')
+        self.assertTrue(extraction['mutates_revision'])
+        self.assertTrue(extraction['requires_idempotency_key'])
+        self.assertEqual(set(self.common['extract_metrics_input']['properties']),
+                         {'task_id', 'expected_revision', 'metric_ids', 'years'})
+        self.assertFalse(list((CONTRACTS / 'examples').glob('save_metric_candidates.*')))
+        prompt = (ROOT / 'harness-plugin/prompts/esg-agent.md').read_text()
+        self.assertNotIn('save_metric_candidates', prompt)
+        for name in TOOLS:
+            self.assertIn(name + '(task_id', prompt)
+        plan = (ROOT / 'docs/superpowers/plans/2026-11-19-esg-agent-implementation.md').read_text()
+        self.assertIn('backend/src/esg_app/', plan)
+        self.assertNotIn('\n  src/esg_app/', plan)
 
     def test_score_dimensions_and_export_formats_are_distinct(self):
         score = self.example('calculate_score', 'success')['data']
@@ -144,7 +209,7 @@ class ContractsTest(unittest.TestCase):
                             for x in export['data']['artifacts']))
         pending = read(CONTRACTS / 'backend-acceptance-cases.json')
         self.assertEqual(pending['status'], 'pending_backend_implementation_not_executed')
-        self.assertEqual(len({c['case_id'] for c in pending['cases']}), 16)
+        self.assertEqual(len({c['case_id'] for c in pending['cases']}), 19)
 
     def test_manifest_references_and_legacy_examples(self):
         for tool in self.manifest['tools']:
